@@ -1,0 +1,41 @@
+##################################################################
+# SCENARIO 3: Service fault - web app returns HTTP 503
+# Condition type: ABNORMAL
+# Run at: 2026-11-23 16:41:18
+##################################################################
+Goal: users report 'the website is down'. Is it the network or the application?
+Fault injected: lab web server on port 8080 started in --mode error (returns HTTP 503).
+
+PS> python network_diagnostics.py localhost --port 8080 --scheme http
+==================================================================
+ AI NETWORK TROUBLESHOOTING AGENT  (skill: ai-network-troubleshooting)
+ Target : localhost   Port: 8080/http
+ Time   : 2026-11-23T22:41:20Z   OS: Windows
+==================================================================
+[1] DNS   tool: system resolver + nslookup
+    PASS  localhost -> 127.0.0.1, ::1  (10.1 ms)
+[2] PING  tool: ping -n 2 -w 1000 127.0.0.1
+    PASS  2/2 replies, 0.0% loss, avg 1.0 ms
+[3] TCP   tool: socket connect to port 8080
+    OPEN    127.0.0.1:8080  0.7 ms  - 3-way handshake completed (SYN -> SYN/ACK -> ACK)
+    REFUSED ::1:8080  2043.4 ms  - host answered with TCP RST - nothing listening or firewall REJECT
+[4] HTTP  tool: HTTP HEAD /
+    503 Service Unavailable  in 16.6 ms  Server: LabWebServer/1.0
+------------------------------------------------------------------
+ AGENT CONCLUSION
+   Verdict    : Application/server fault (HTTP 503) - the network is healthy
+   Fault layer: Layer 7 (Application)
+   Confidence : High
+   Why (evidence):
+     - DNS OK: localhost -> 127.0.0.1, ::1
+     - Ping: 2/2 replies, 0.0% loss, avg 1.0 ms
+     - TCP 127.0.0.1:8080 OPEN in 0.7 ms (handshake completed)
+     - HTTP 503 Service Unavailable in 16.6 ms (Server: LabWebServer/1.0)
+     - A 5xx is an answer FROM the server -> the network delivered the request and the reply
+   Not proven by this evidence:
+     - Which internal component failed (database, code, upstream) - check server logs
+   Next step  : Check the web server / application logs. Do NOT restart routers or change DNS.
+==================================================================
+
+>>> Server-side log (independent verification)  (evidence\web_server_s3.log, last 12 lines)
+    16:41:23 127.0.0.1 HEAD / -> 503  (backend error: database connection pool exhausted)

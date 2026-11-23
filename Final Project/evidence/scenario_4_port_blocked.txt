@@ -1,0 +1,63 @@
+##################################################################
+# SCENARIO 4: Port blocked - web service stops listening on its port
+# Condition type: NORMAL -> ABNORMAL
+# Run at: 2026-11-23 16:52:36
+##################################################################
+Goal: the web service on port 8080 stops. Can the agent tell 'port closed' from 'network down'?
+
+>>> BEFORE - service running (normal)
+PS> python network_diagnostics.py localhost --port 8080 --no-http
+==================================================================
+ AI NETWORK TROUBLESHOOTING AGENT  (skill: ai-network-troubleshooting)
+ Target : localhost   Port: 8080/tcp
+ Time   : 2026-11-23T22:52:37Z   OS: Windows
+==================================================================
+[1] DNS   tool: system resolver + nslookup
+    PASS  localhost -> 127.0.0.1, ::1  (10.5 ms)
+[2] PING  tool: ping -n 2 -w 1000 127.0.0.1
+    PASS  2/2 replies, 0.0% loss, avg 1.0 ms
+[3] TCP   tool: socket connect to port 8080
+    OPEN    127.0.0.1:8080  1.4 ms  - 3-way handshake completed (SYN -> SYN/ACK -> ACK)
+    REFUSED ::1:8080  2022.3 ms  - host answered with TCP RST - nothing listening or firewall REJECT
+------------------------------------------------------------------
+ AGENT CONCLUSION
+   Verdict    : Port 8080 is reachable - transport layer healthy
+   Fault layer: Layer 4 (Transport) OK
+   Confidence : High
+   Why (evidence):
+     - DNS OK: localhost -> 127.0.0.1, ::1
+     - Ping: 2/2 replies, 0.0% loss, avg 1.0 ms
+     - TCP 127.0.0.1:8080 OPEN in 1.4 ms (handshake completed)
+   Next step  : No action needed for connectivity.
+==================================================================
+
+>>> Fault injected: web server stopped -> nothing is listening on port 8080 any more
+
+>>> AFTER - port blocked (abnormal)
+PS> python network_diagnostics.py localhost --port 8080 --no-http
+==================================================================
+ AI NETWORK TROUBLESHOOTING AGENT  (skill: ai-network-troubleshooting)
+ Target : localhost   Port: 8080/tcp
+ Time   : 2026-11-23T22:52:42Z   OS: Windows
+==================================================================
+[1] DNS   tool: system resolver + nslookup
+    PASS  localhost -> 127.0.0.1, ::1  (19.9 ms)
+[2] PING  tool: ping -n 2 -w 1000 127.0.0.1
+    PASS  2/2 replies, 0.0% loss, avg 1.0 ms
+[3] TCP   tool: socket connect to port 8080
+    REFUSED 127.0.0.1:8080  2042.7 ms  - host answered with TCP RST - nothing listening or firewall REJECT
+    REFUSED ::1:8080  2035.7 ms  - host answered with TCP RST - nothing listening or firewall REJECT
+------------------------------------------------------------------
+ AGENT CONCLUSION
+   Verdict    : Port 8080 closed / rejected - host reachable, service not listening
+   Fault layer: Layer 4 (Transport)
+   Confidence : High
+   Why (evidence):
+     - DNS OK: localhost -> 127.0.0.1, ::1
+     - Ping: 2/2 replies, 0.0% loss, avg 1.0 ms
+     - TCP 127.0.0.1:8080 REFUSED in 2042.7 ms -> host sent RST immediately
+     - An RST proves the host is alive and reachable; it is the PORT that is closed
+   Not proven by this evidence:
+     - Whether nothing is listening or a firewall REJECT rule sent the RST
+   Next step  : Start the service or check that it listens on port 8080 (netstat -ano | findstr :8080).
+==================================================================

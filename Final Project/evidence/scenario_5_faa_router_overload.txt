@@ -1,0 +1,100 @@
+##################################################################
+# SCENARIO 5: FAA-RTR-01 router overload - congestion flagged
+# Condition type: NORMAL -> NEW / UNSEEN
+# Run at: 2026-11-23 16:47:45
+##################################################################
+Goal: users say 'the network is slow'. Can the agent find and flag the overloaded router?
+Path:  agent --> FAA-RTR-01 (:8081) --> web server (:8080)
+
+>>> BEFORE - FAA-RTR-01 normal (no extra traffic)
+PS> python network_diagnostics.py localhost --port 8081 --scheme http --samples 10 --bypass localhost:8080 --router-stats http://127.0.0.1:8082/stats
+==================================================================
+ AI NETWORK TROUBLESHOOTING AGENT  (skill: ai-network-troubleshooting)
+ Target : localhost   Port: 8081/http
+ Time   : 2026-11-23T22:47:48Z   OS: Windows
+==================================================================
+[1] DNS   tool: system resolver + nslookup
+    PASS  localhost -> 127.0.0.1, ::1  (8.6 ms)
+[2] PING  tool: ping -n 2 -w 1000 127.0.0.1
+    PASS  2/2 replies, 0.0% loss, avg 1.0 ms
+[3] TCP   tool: socket connect to port 8081
+    OPEN    127.0.0.1:8081  1.3 ms  - 3-way handshake completed (SYN -> SYN/ACK -> ACK)
+    REFUSED ::1:8081  2031.8 ms  - host answered with TCP RST - nothing listening or firewall REJECT
+[6] LATENCY SERIES (through router)  tool: 10 x HTTP HEAD
+    ok 10/10  loss 0.0%  min 15.4  median 16.8  p95 27.3  max 27.3  jitter 2.4 (ms)
+[6b] LATENCY SERIES (bypass path)  tool: 10 x HTTP HEAD
+    ok 10/10  loss 0.0%  min 3.2  median 15.2  p95 26.6  max 26.6  jitter 12.7 (ms)
+[7] ROUTER STATS  tool: router stats page (SNMP-style counters)
+    FAA-RTR-01: CPU 3.9%  queue 0/30  offered load 2.2%  drops(last 5s) 0  drops(total) 0
+    top talker: 127.0.0.1    100.0% of connections
+------------------------------------------------------------------
+ AGENT CONCLUSION
+   Verdict    : Path through FAA-RTR-01 is healthy - no congestion detected
+   Fault layer: None
+   Confidence : High
+   Why (evidence):
+     - DNS OK: localhost -> 127.0.0.1, ::1
+     - Ping: 2/2 replies, 0.0% loss, avg 1.0 ms
+     - Through router (port 8081): 10/10 OK, loss 0.0%, median 16.8 ms, p95 27.3 ms, jitter 2.4 ms
+     - Bypass path (localhost:8080): 10/10 OK, loss 0.0%, median 15.2 ms, p95 26.6 ms, jitter 12.7 ms
+     - Router stats (FAA-RTR-01): CPU 3.9%, queue 0/30, offered load 2.2% of capacity, drops last 5s = 0
+     - Top talker on FAA-RTR-01: 127.0.0.1 = 100.0% of connections
+     - Delay and loss are inside normal limits (loss < 5.0%, p95 < bypass + 100 ms)
+   Not proven by this evidence:
+     - Behaviour under heavier load (this is a point-in-time baseline)
+   Next step  : Keep this as the baseline for later comparison.
+==================================================================
+
+>>> Fault injected: flood of traffic sent into FAA-RTR-01 (more than it can handle)
+
+>>> AFTER - FAA-RTR-01 overloaded
+PS> python network_diagnostics.py localhost --port 8081 --scheme http --samples 10 --bypass localhost:8080 --router-stats http://127.0.0.1:8082/stats
+==================================================================
+ AI NETWORK TROUBLESHOOTING AGENT  (skill: ai-network-troubleshooting)
+ Target : localhost   Port: 8081/http
+ Time   : 2026-11-23T22:47:59Z   OS: Windows
+==================================================================
+[1] DNS   tool: system resolver + nslookup
+    PASS  localhost -> 127.0.0.1, ::1  (10.5 ms)
+[2] PING  tool: ping -n 2 -w 1000 127.0.0.1
+    PASS  2/2 replies, 0.0% loss, avg 1.0 ms
+[3] TCP   tool: socket connect to port 8081
+    OPEN    127.0.0.1:8081  0.6 ms  - 3-way handshake completed (SYN -> SYN/ACK -> ACK)
+    REFUSED ::1:8081  2010.5 ms  - host answered with TCP RST - nothing listening or firewall REJECT
+[6] LATENCY SERIES (through router)  tool: 10 x HTTP HEAD
+    ok 9/10  loss 10.0%  min 309.4  median 325.2  p95 353.9  max 353.9  jitter 18.8 (ms)
+    failures: reset (connection dropped mid-request)
+[6b] LATENCY SERIES (bypass path)  tool: 10 x HTTP HEAD
+    ok 10/10  loss 0.0%  min 1.8  median 3.0  p95 24.1  max 24.1  jitter 4.4 (ms)
+[7] ROUTER STATS  tool: router stats page (SNMP-style counters)
+    FAA-RTR-01: CPU 99.6%  queue 28/30  offered load 161.8%  drops(last 5s) 353  drops(total) 938
+    top talker: 127.0.0.2    98.9% of connections
+    top talker: 127.0.0.1    1.1% of connections
+------------------------------------------------------------------
+ AGENT CONCLUSION
+   Verdict    : NETWORK OVERLOAD FLAGGED at FAA-RTR-01 - congestion is causing delay and drops
+   Fault layer: Layer 3 (router congestion / queuing)
+   Confidence : High
+   Why (evidence):
+     - DNS OK: localhost -> 127.0.0.1, ::1
+     - Ping: 2/2 replies, 0.0% loss, avg 1.0 ms
+     - Through router (port 8081): 9/10 OK, loss 10.0%, median 325.2 ms, p95 353.9 ms, jitter 18.8 ms
+     - Failure types seen: reset (connection dropped mid-request)
+     - Bypass path (localhost:8080): 10/10 OK, loss 0.0%, median 3.0 ms, p95 24.1 ms, jitter 4.4 ms
+     - Router stats (FAA-RTR-01): CPU 99.6%, queue 28/30, offered load 161.8% of capacity, drops last 5s = 353
+     - Top talker on FAA-RTR-01: 127.0.0.2 = 98.9% of connections
+     - Queuing delay detected: p95 far above the bypass path
+     - Packet/connection loss 10.0% >= 5.0% limit
+     - TCP handshake to the router still succeeds -> the router is up but cannot keep up
+     - Same server is fast and loss-free when the router is bypassed -> server is NOT the bottleneck
+     - FAA-RTR-01 confirms overload from its own counters (CPU / queue / drops)
+   Not proven by this evidence:
+     - Whether the flood is malicious (DoS) or a misconfiguration - inspect the top talker
+   Next step  : Rate-limit or block the top talker, apply QoS, or add capacity on FAA-RTR-01. Do not restart the web server - it is healthy.
+==================================================================
+
+>>> FAA-RTR-01 router log (verification)  (evidence\faa_router.log, last 4 lines)
+    16:48:06 FAA-RTR-01 cpu= 99.7% load= 161.6% queue=28/30 drops(5s)= 350 top_talker=127.0.0.2(99.0%)  <-- OVERLOAD
+    16:48:07 FAA-RTR-01 cpu= 99.9% load= 162.0% queue=28/30 drops(5s)= 353 top_talker=127.0.0.2(98.8%)  <-- OVERLOAD
+    16:48:08 FAA-RTR-01 cpu= 99.8% load= 161.8% queue=28/30 drops(5s)= 353 top_talker=127.0.0.2(98.9%)  <-- OVERLOAD
+    16:48:09 FAA-RTR-01 cpu= 99.8% load= 161.2% queue=27/30 drops(5s)= 346 top_talker=127.0.0.2(99.3%)  <-- OVERLOAD

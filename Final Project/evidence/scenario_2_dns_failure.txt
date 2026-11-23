@@ -1,0 +1,35 @@
+##################################################################
+# SCENARIO 2: DNS failure - name does not resolve, network still up
+# Condition type: ABNORMAL
+# Run at: 2026-11-23 16:39:02
+##################################################################
+Goal: a mistyped / non-existent hostname. Is it DNS, or is the whole network down?
+Fault injected: hostname 'exampel-cis2347.invalid' (.invalid is reserved by RFC 6761 - it can never resolve).
+Known-good IP: 104.20.23.154  (obtained by resolving example.com just before the test)
+
+PS> python network_diagnostics.py exampel-cis2347.invalid --known-ip 104.20.23.154 --no-http
+==================================================================
+ AI NETWORK TROUBLESHOOTING AGENT  (skill: ai-network-troubleshooting)
+ Target : exampel-cis2347.invalid   Port: 443/tcp
+ Time   : 2026-11-23T22:39:03Z   OS: Windows
+==================================================================
+[1] DNS   tool: system resolver + nslookup
+    FAIL  NXDOMAIN - the name does not exist  [[Errno 11001] getaddrinfo failed]
+          nslookup says: Server:  UnKnown | Address:  192.168.0.1 | *** UnKnown can't find exampel-cis2347.invalid: Non-existent domain
+[1b] KNOWN-IP CHECK   comparing against operator-supplied IP 104.20.23.154
+    PING  2/2 replies
+    TCP   104.20.23.154:443 OPEN (28.9 ms)
+------------------------------------------------------------------
+ AGENT CONCLUSION
+   Verdict    : DNS resolution fault - the network path itself is working
+   Fault layer: Layer 7 (DNS / name resolution)
+   Confidence : High
+   Why (evidence):
+     - DNS lookup failed: NXDOMAIN - the name does not exist ([Errno 11001] getaddrinfo failed)
+     - Ping to known IP 104.20.23.154: 2/2 replies
+     - TCP 104.20.23.154:443 -> open (28.9 ms)
+     - So packets DO reach the internet - only the name -> address step is broken
+   Not proven by this evidence:
+     - That the known IP is the correct address for this name
+   Next step  : Check the spelling of the hostname, then the DNS server setting (ipconfig /all) or try another resolver (nslookup <name> 1.1.1.1).
+==================================================================
