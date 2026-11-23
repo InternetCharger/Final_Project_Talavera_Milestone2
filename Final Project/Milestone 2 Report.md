@@ -10,7 +10,6 @@
 | **Eeshaan Momin** | Found and fixed the two Milestone 1 bugs: Windows `ping -c` and the nslookup parsing error. Rewrote the agent CLI. Updated the `ai-network-troubleshooting` skill to v2. Ran and analyzed Scenarios 1 and 2. Wrote the report. |
 | **Antonio Talavera** | Built the lab used for fault injection: the 503 web server, the FAA-RTR-01 router simulator and the traffic flood generator. Wrote the `router-overload-detection` skill. Ran and analyzed Scenarios 3–5. Checked each agent conclusion against server and router logs. |
 
-
 ---
 
 ## 1. At a glance
@@ -65,17 +64,9 @@ python run_scenarios.py 1     # 1 to 5, or "all"
 **Question:** Can the agent recognize a fully healthy path?
 **Command:** `python network_diagnostics.py example.com --port 443`
 
-**Evidence** ![Scenario 1 output](Pics/Example1.png)
+**Evidence:**
 
-```text
-[1] DNS   PASS  example.com -> 104.20.23.154, 172.66.147.243 ...
-[2] PING  PASS  2/2 replies, 0% loss, avg <ms>
-[3] TCP   OPEN  104.20.23.154:443  <ms> - 3-way handshake completed
-[4] HTTP  200 OK  in <ms>  Server: cloudflare
- AGENT CONCLUSION
-   Verdict    : Healthy - DNS, transport and HTTP all working
-   Fault layer: None (all layers verified)     Confidence: High
-```
+![Scenario 1 output](Pics/Example1.png)
 
 **Agent result:** Healthy. All layers were verified.
 
@@ -91,20 +82,11 @@ python run_scenarios.py 1     # 1 to 5, or "all"
 
 **Question:** A user typed the wrong name. Is DNS broken, or the whole network?
 **Fault:** `exampel-cis2347.invalid`. The `.invalid` domain is reserved (RFC 6761) and can never resolve, so we know the correct answer in advance.
-**Command:** `python network_diagnostics.py exampel-cis2347.invalid --known-ip <example.com IP> --no-http`
+**Command:** `python network_diagnostics.py exampel-cis2347.invalid --known-ip 104.20.23.154 --no-http`
 
-**Evidence** ![Scenario 2 output](Pics/ExampleTwo.png)
+**Evidence:**
 
-```text
-[1] DNS   FAIL  NXDOMAIN - the name does not exist  [[Errno 11001] getaddrinfo failed]
-          nslookup says: Server: <your DNS server> | *** ... can't find exampel-cis2347.invalid: Non-existent domain
-[1b] KNOWN-IP CHECK   comparing against operator-supplied IP 104.20.23.154
-    PING  2/2 replies
-    TCP   104.20.23.154:443 OPEN (<ms>)
- AGENT CONCLUSION
-   Verdict    : DNS resolution fault - the network path itself is working
-   Fault layer: Layer 7 (DNS / name resolution)     Confidence: High
-```
+![Scenario 2 output](Pics/ExampleTwo.png)
 
 **Agent result:** DNS fault. The network path works.
 
@@ -121,21 +103,9 @@ python run_scenarios.py 1     # 1 to 5, or "all"
 **Fault:** lab web server started with `--mode error`, which returns **HTTP 503**.
 **Command:** `python network_diagnostics.py localhost --port 8080 --scheme http`
 
-**Evidence** ![Scenario 3 output](Pics/ExampleThree.png)
+**Evidence:**
 
-```text
-[1] DNS   PASS  localhost -> 127.0.0.1  (1.6 ms)
-[3] TCP   OPEN    127.0.0.1:8080  0.1 ms  - 3-way handshake completed (SYN -> SYN/ACK -> ACK)
-[4] HTTP  503 Service Unavailable  in 1.3 ms  Server: LabWebServer/1.0
- AGENT CONCLUSION
-   Verdict    : Application/server fault (HTTP 503) - the network is healthy
-   Fault layer: Layer 7 (Application)     Confidence: High
-     - A 5xx is an answer FROM the server -> the network delivered the request and the reply
-   Next step  : Check the web server / application logs. Do NOT restart routers or change DNS.
-
->>> Server-side log (independent verification)
-    00:41:40 127.0.0.1 HEAD / -> 503  (backend error: database connection pool exhausted)
-```
+![Scenario 3 output](Pics/ExampleThree.png)
 
 **Agent result:** Application fault. The network is healthy.
 
@@ -152,7 +122,9 @@ python run_scenarios.py 1     # 1 to 5, or "all"
 **What we did:** ran the agent once with the web server running, then stopped the server and ran it again.
 **Command (both times):** `python network_diagnostics.py localhost --port 8080 --no-http`
 
-**Evidence** ![Scenario 4 output](Pics/ExampleFourpt2.png)
+**Evidence:**
+
+![Scenario 4 output](Pics/ExampleFourpt2.png)
 
 ```text
 ##################################################################
@@ -227,7 +199,9 @@ PS> python network_diagnostics.py localhost --port 8080 --no-http
 
 **Analysis & verification:**
 - Ping still works and DNS still works, so the computer and the network are fine.
-- The TCP test got a **RST (reset)** right away, in 0.1 ms. A reset is a reply from the computer saying "nobody is listening on this port". If the network were down, there would be no reply at all and the test would wait until it timed out.
+- The TCP test got **REFUSED**, which means the computer sent back a **RST (reset)**: "nobody is listening on this port". If the network were down, there would be no reply at all and the test would end in a **timeout** instead.
+- **Unexpected Windows behavior:** the refusal took about **2 seconds** (2042.7 ms), not a fraction of a millisecond. Windows doesn't give up after the first reset. It retries the connection twice more before reporting "refused". So on Windows the *type* of error (refused vs. timed out) is the evidence, not the speed. The agent's line "host sent RST immediately" is therefore slightly inaccurate (see §8).
+- The `::1` lines are IPv6. `localhost` resolves to both 127.0.0.1 (IPv4) and ::1 (IPv6), and our lab server only listens on IPv4. That's why `::1` is refused even in the BEFORE run, while 127.0.0.1 is OPEN.
 - Cross-check: `netstat -ano | findstr :8080` shows nothing listening after the server is stopped.
 - **Correct ✅.** The agent blames the port (Layer 4), not the network, and suggests restarting the service.
 
@@ -246,14 +220,17 @@ python network_diagnostics.py localhost --port 8081 --scheme http --samples 10 `
 
 `--samples 10` repeats the request 10 times, `--bypass` also tests the server directly (skipping the router), and `--router-stats` reads the router's own counters.
 
-**Evidence** ![Scenario 5 output](Pics/Conclusion5.png)
+**Evidence:**
+
+![Scenario 5 output](Pics/Conclusion5.png)
 
 | What we measured | Before (normal) | After (overloaded) |
 |---|---|---|
-| Delay through FAA-RTR-01 | 12 ms | **298 ms** |
-| Delay going directly to the server | 1 ms | 1 ms (no change) |
-| Router CPU | 3 % | **100 %** |
-| Packets dropped by the router (last 5 s) | 0 | **321** |
+| Delay through FAA-RTR-01 (median) | 17 ms | **325 ms** |
+| Delay going directly to the server (median) | 15 ms | 3 ms (still fast) |
+| Requests that failed through the router | 0 of 10 | **1 of 10 (reset)** |
+| Router CPU | 4 % | **99.6 %** |
+| Packets dropped by the router (last 5 s) | 0 | **353** |
 | Agent verdict | Healthy | **Overload flagged at FAA-RTR-01** |
 
 ```text
@@ -365,10 +342,10 @@ PS> python network_diagnostics.py localhost --port 8081 --scheme http --samples 
 **Agent result:** Before: healthy. After: **overload flagged at FAA-RTR-01**.
 
 **Analysis & verification:**
-- **The router is the slow part.** Through the router the delay went from 12 ms to 298 ms, but going straight to the server stayed at 1 ms. So the server is fine and the delay is added inside FAA-RTR-01.
-- **Why it slows down:** the router can handle 100 connections per second but received about 160. The extra traffic waits in line (a queue). When the line is full, the router throws packets away, which is why it dropped 321 in 5 seconds.
-- **The math checks out:** 30 packets waiting × 10 ms each ≈ 300 ms, and we measured 298 ms.
-- **Verified by the router's own log:** CPU at 100%, a full queue, and the flood source (127.0.0.2) sending about 99% of the traffic.
+- **The router is the slow part.** Through the router the delay went from 17 ms to 325 ms, and 1 of 10 requests was dropped. Going straight to the server stayed fast (3 ms) with no failures. So the server is fine and the delay is added inside FAA-RTR-01.
+- **Why it slows down:** the router can handle 100 connections per second but received about 160. The extra traffic waits in line (a queue). When the line is full, the router throws packets away, which is why it dropped 353 in 5 seconds.
+- **The math checks out:** 30 packets waiting × 10 ms each ≈ 300 ms of waiting, and we measured 325 ms. The extra ~25 ms is normal request time on Windows (the baseline was already 15–17 ms).
+- **Verified by the router's own log:** CPU at ~100%, a nearly full queue (28/30), and the flood source (127.0.0.2) sending about 99% of the traffic.
 - **Correct ✅.** The agent flags the router, doesn't blame the web server, and points to the source of the extra traffic.
 
 ---
@@ -391,7 +368,9 @@ Running the Milestone 1 agent on `google.com` gave **"Network Reachability / Pat
 
 | Limitation | Effect | Improvement |
 |---|---|---|
-| Unexpected: in Scenario 5 our test requests were almost never dropped, while the router dropped ~40% of the flood traffic | The flood sent far more packets, so it took almost all the drops. 10 samples is too few to measure loss, so the agent relied on delay | More samples, or several requests at once |
+| Unexpected: in Scenario 5 only 1 of our 10 test requests was dropped, while the router dropped ~40% of the flood traffic | The flood sent far more packets, so it took most of the drops. 10 samples is too few to measure loss precisely | More samples, or several requests at once |
+| Unexpected: on Windows a refused connection took ~2 s (Scenario 4) | The agent says "RST immediately", which isn't true on Windows. The verdict is still correct because it is based on the error type | Reword the agent message; rely on refused vs. timeout, not timing |
+| `localhost` also resolves to IPv6 `::1`, but the lab server only listens on IPv4 | Extra "REFUSED ::1" lines in Scenarios 4–5 that could confuse a reader | Make the lab server listen on both IPv4 and IPv6 |
 | A stopped service and a firewall REJECT rule both send a reset (Scenario 4) | The agent can't say which one caused it | Check `netstat` for a listener, or capture packets with Wireshark |
 | Fixed thresholds (5% loss, +100 ms) | Could misjudge links that are naturally slow, such as satellite | Compare against a saved baseline per network |
 | Lab runs on one PC (loopback) | No real cables, Wi-Fi or WAN latency | Test against a real lab router (GNS3, Packet Tracer) with real SNMP |
