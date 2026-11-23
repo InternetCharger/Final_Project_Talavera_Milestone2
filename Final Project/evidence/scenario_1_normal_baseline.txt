@@ -1,0 +1,35 @@
+##################################################################
+# SCENARIO 1: Normal state - healthy public website
+# Condition type: NORMAL
+# Run at: 2026-11-23 17:06:01
+##################################################################
+Goal: prove the agent recognises a fully healthy path (DNS -> ping -> TCP 443 -> HTTPS).
+
+PS> python network_diagnostics.py example.com --port 443
+==================================================================
+ AI NETWORK TROUBLESHOOTING AGENT  (skill: ai-network-troubleshooting)
+ Target : example.com   Port: 443/https
+ Time   : 2026-11-23T23:06:02Z   OS: Windows
+==================================================================
+[1] DNS   tool: system resolver + nslookup
+    PASS  example.com -> 104.20.23.154, 172.66.147.243  (52.8 ms)
+          nslookup says: Server:  UnKnown | Address:  192.168.0.1 | Name:    example.com | Addresses:  2606:4700:10::ac42:93f3 | 2606:4700:10::6814:179a | 104.20.23.154
+[2] PING  tool: ping -n 2 -w 1000 104.20.23.154
+    PASS  2/2 replies, 0.0% loss, avg 14.5 ms
+[3] TCP   tool: socket connect to port 443
+    OPEN    104.20.23.154:443  22.9 ms  - 3-way handshake completed (SYN -> SYN/ACK -> ACK)
+    OPEN    172.66.147.243:443  31.1 ms  - 3-way handshake completed (SYN -> SYN/ACK -> ACK)
+[4] HTTP  tool: HTTPS HEAD /
+    FAIL  tls error: CERTIFICATE_VERIFY_FAILED  after 85.0 ms
+------------------------------------------------------------------
+ AGENT CONCLUSION
+   Verdict    : Service accepted the connection but did not answer correctly (hung app or TLS problem)
+   Fault layer: Layer 7 (Application / TLS)
+   Confidence : Medium
+   Why (evidence):
+     - DNS OK: example.com -> 104.20.23.154, 172.66.147.243
+     - Ping: 2/2 replies, 0.0% loss, avg 14.5 ms
+     - TCP 104.20.23.154:443 OPEN in 22.9 ms (handshake completed)
+     - HTTP request failed after TCP connected: tls error: CERTIFICATE_VERIFY_FAILED
+   Next step  : Check the service process and its logs; test again with --scheme http if TLS is suspect.
+==================================================================

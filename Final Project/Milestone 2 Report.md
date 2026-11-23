@@ -65,7 +65,7 @@ python run_scenarios.py 1     # 1 to 5, or "all"
 **Question:** Can the agent recognize a fully healthy path?
 **Command:** `python network_diagnostics.py example.com --port 443`
 
-**Evidence** ![Scenario 1 output](Pics/ExampleOne.png)
+**Evidence** ![Scenario 1 output](Pics/Example1.png)
 
 ```text
 [1] DNS   PASS  example.com -> 104.20.23.154, 172.66.147.243 ...
